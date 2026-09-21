@@ -13,7 +13,7 @@ import (
 func skipDockerE2E(t *testing.T) {
 	t.Helper()
 	err := dockerPing()
-	switch dockerE2EAction(err == nil, os.Getenv("GITHUB_ACTIONS")) {
+	switch dockerE2EAction(err == nil, githubActionsEnv()) {
 	case "run":
 		return
 	case "fatal":
@@ -31,6 +31,13 @@ func dockerE2EAction(available bool, githubActions string) string {
 		return "fatal"
 	}
 	return "skip"
+}
+
+func githubActionsEnv() string {
+	if v := os.Getenv("GITHUB_ACTIONS"); v != "" {
+		return v
+	}
+	return os.Getenv("CI")
 }
 
 func TestDockerE2EAction(t *testing.T) {

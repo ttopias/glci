@@ -246,13 +246,13 @@ func jobNeedsNetwork(j gitlabci.Job) bool {
 }
 
 func dockerBin() string {
-	if p, err := exec.LookPath("docker"); err == nil {
-		return p
-	}
 	for _, p := range []string{"/usr/bin/docker", "/usr/local/bin/docker"} {
 		if existingFile(p) {
 			return p
 		}
+	}
+	if p, err := exec.LookPath("docker"); err == nil {
+		return p
 	}
 	return "docker"
 }
