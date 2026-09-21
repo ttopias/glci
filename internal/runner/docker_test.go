@@ -134,6 +134,9 @@ func TestDockerInDocker(t *testing.T) {
 	if !dockerAvailable() {
 		t.Skip("docker not available")
 	}
+	if os.Getenv("GITHUB_ACTIONS") == "true" {
+		t.Skip("nested docker-in-docker is not available on GitHub-hosted runners")
+	}
 	dir := t.TempDir()
 	write(t, dir, ".gitlab-ci.yml", `
 dind:
