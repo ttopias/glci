@@ -1,0 +1,3 @@
+.setup:
+  before_script:
+    - echo "setup from include"

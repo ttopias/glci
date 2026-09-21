@@ -1,0 +1,33 @@
+version: 2
+
+project_name: glci
+
+builds:
+  - env:
+      - CGO_ENABLED=0
+    goos: [linux, darwin, windows]
+    goarch: [amd64, arm64]
+    main: ./cmd/glci
+    binary: glci
+    ldflags:
+      - -s -w
+      - -X github.com/ttopias/glci/internal/version.Version={{.Version}}
+      - -X github.com/ttopias/glci/internal/version.Commit={{.ShortCommit}}
+      - -X github.com/ttopias/glci/internal/version.Date={{.Date}}
+
+archives:
+  - format: tar.gz
+    format_overrides:
+      - goos: windows
+        format: zip
+    name_template: "{{ .ProjectName }}_{{ .Os }}_{{ .Arch }}"
+
+checksum:
+  name_template: checksums.txt
+
+changelog:
+  sort: asc
+  filters:
+    exclude:
+      - "^docs:"
+      - "^test:"

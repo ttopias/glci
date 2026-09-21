@@ -1,0 +1,12 @@
+# Local-only runner config. Not part of GitLab.
+#
+# projects:
+#   mygroup/templates: ../templates
+# components:
+#   gitlab.com/my-org/secret-detection: ./components/secret-detection
+# templates_dir: ./vendor/gitlab-templates
+# variables:
+#   MY_TOKEN: "set me"
+executor: docker
+# manual: run          # same as --manual
+protected_branches: [main]

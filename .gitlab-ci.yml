@@ -1,0 +1,22 @@
+stages: [lint, test]
+
+default:
+  image: golang:1.27-alpine
+
+variables:
+  GOFLAGS: -count=1
+
+lint:
+  stage: lint
+  script:
+    - gofmt -l . | tee /tmp/gofmt.out
+    - test ! -s /tmp/gofmt.out
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+    - if: $CI_COMMIT_BRANCH
+
+unit:
+  stage: test
+  script:
+    - go test ./...
+  coverage: '/coverage: \d+\.\d+%/'

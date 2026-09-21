@@ -1,0 +1,5 @@
+/glci
+/glci.exe
+.glci/
+*.test
+coverage.out

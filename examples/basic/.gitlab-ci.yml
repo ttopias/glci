@@ -1,0 +1,51 @@
+stages: [build, test, deploy]
+
+default:
+  image: alpine:3.20
+  retry:
+    max: 1
+    when: [script_failure]
+
+variables:
+  GREETING: "hello from glci"
+
+.build:
+  before_script:
+    - echo preparing
+
+build:
+  extends: .build
+  stage: build
+  script:
+    - echo "$GREETING" > artifact.txt
+    - echo "VERSION=1" > build.env
+  artifacts:
+    paths: [artifact.txt]
+    reports:
+      dotenv: build.env
+  cache:
+    key: alpine
+    paths: [artifact.txt]
+
+test:
+  stage: test
+  needs: [build]
+  parallel:
+    matrix:
+      - TARGET: [unit, integration]
+  script:
+    - test -f artifact.txt
+    - echo "testing $TARGET version=$VERSION"
+  rules:
+    - if: $CI_COMMIT_BRANCH
+      when: on_success
+
+manual_deploy:
+  stage: deploy
+  environment:
+    name: production
+    url: http://localhost
+  script:
+    - echo deploy
+  when: manual
+  resource_group: prod
