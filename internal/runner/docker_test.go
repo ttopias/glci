@@ -9,10 +9,18 @@ import (
 	"github.com/ttopias/glci/internal/gitlabci"
 )
 
-func TestDockerPipeline(t *testing.T) {
+func skipDockerE2E(t *testing.T) {
+	t.Helper()
+	if os.Getenv("GITHUB_ACTIONS") == "true" {
+		t.Skip("docker e2e is skipped on GitHub-hosted runners")
+	}
 	if !dockerAvailable() {
 		t.Skip("docker not available")
 	}
+}
+
+func TestDockerPipeline(t *testing.T) {
+	skipDockerE2E(t)
 	dir := t.TempDir()
 	write(t, dir, "ci/common.yml", `
 .setup:
@@ -93,9 +101,7 @@ test:
 }
 
 func TestDockerCustomImageAndService(t *testing.T) {
-	if !dockerAvailable() {
-		t.Skip("docker not available")
-	}
+	skipDockerE2E(t)
 	dir := t.TempDir()
 	write(t, dir, ".gitlab-ci.yml", `
 job:
@@ -131,12 +137,7 @@ job:
 }
 
 func TestDockerInDocker(t *testing.T) {
-	if !dockerAvailable() {
-		t.Skip("docker not available")
-	}
-	if os.Getenv("GITHUB_ACTIONS") == "true" {
-		t.Skip("nested docker-in-docker is not available on GitHub-hosted runners")
-	}
+	skipDockerE2E(t)
 	dir := t.TempDir()
 	write(t, dir, ".gitlab-ci.yml", `
 dind:
@@ -177,9 +178,7 @@ dind:
 }
 
 func TestDockerFileVarsAndChildPipeline(t *testing.T) {
-	if !dockerAvailable() {
-		t.Skip("docker not available")
-	}
+	skipDockerE2E(t)
 	dir := t.TempDir()
 	write(t, dir, "child.yml", `
 kid:
@@ -233,9 +232,7 @@ bridge:
 }
 
 func TestDockerCache(t *testing.T) {
-	if !dockerAvailable() {
-		t.Skip("docker not available")
-	}
+	skipDockerE2E(t)
 	dir := t.TempDir()
 	write(t, dir, ".gitlab-ci.yml", `
 one:
