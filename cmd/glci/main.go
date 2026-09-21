@@ -192,7 +192,7 @@ func runCmd(cmd string, args []string) error {
 	}
 	defaultImage := os.Getenv("GLCI_DEFAULT_IMAGE")
 	if defaultImage == "" {
-		defaultImage = "alpine:3.20"
+		defaultImage = "alpine:3.24"
 	}
 	copt := gitlabci.CompileOptions{
 		Root: root, File: f.file, Git: git, Source: source,

@@ -40,7 +40,7 @@ missing:
 			Root: dir, Branch: "main", Ref: "main", DefaultBranch: "main",
 			SHA: "abc12345", ShortSHA: "abc12345", ChangedFiles: []string{"app.go"},
 		},
-		Source: "push", DefaultImage: "alpine:3.20",
+		Source: "push", DefaultImage: "alpine:3.24",
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -78,7 +78,7 @@ root:
 		Root: dir, File: ".gitlab-ci.yml",
 		Git:          gitctx.Info{Root: dir, Branch: "main", Ref: "main", DefaultBranch: "main", SHA: "abc12345", ShortSHA: "abc12345"},
 		Source:       "push",
-		DefaultImage: "alpine:3.20",
+		DefaultImage: "alpine:3.24",
 		AllowRemote:  true,
 	})
 	if err != nil {
@@ -214,7 +214,7 @@ func TestCompileExamples(t *testing.T) {
 			Root: dir, File: ".gitlab-ci.yml",
 			Git:          gitctx.Info{Root: dir, Branch: "main", Ref: "main", DefaultBranch: "main", SHA: "abc12345", ShortSHA: "abc12345"},
 			Source:       "push",
-			DefaultImage: "alpine:3.20",
+			DefaultImage: "alpine:3.24",
 		})
 		if err != nil {
 			t.Fatalf("%s: %v", rel, err)

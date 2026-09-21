@@ -1,7 +1,7 @@
 stages: [build, test, deploy]
 
 default:
-  image: alpine:3.20
+  image: alpine:3.24
   retry:
     max: 1
     when: [script_failure]

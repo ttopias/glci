@@ -178,7 +178,7 @@ bridge:
 		Stdout: os.Stdout, Stderr: os.Stderr,
 		Compile: gitlabci.CompileOptions{
 			Root: dir, Git: gitctx.Info{Root: dir, Branch: "main", Ref: "main", DefaultBranch: "main"},
-			Source: "push", DefaultImage: "alpine:3.20",
+			Source: "push", DefaultImage: "alpine:3.24",
 		},
 	})
 	if err != nil {
@@ -325,7 +325,7 @@ bridge:
 		Stdout: os.Stdout, Stderr: os.Stderr,
 		Compile: gitlabci.CompileOptions{
 			Root: dir, Git: gitctx.Info{Root: dir, Branch: "main", Ref: "main", DefaultBranch: "main", SHA: "deadbeef", ShortSHA: "deadbeef"},
-			Source: "push", DefaultImage: "alpine:3.20",
+			Source: "push", DefaultImage: "alpine:3.24",
 		},
 	})
 	if err != nil {
@@ -363,7 +363,7 @@ func mustCompile(t *testing.T, dir string) *gitlabci.Pipeline {
 	p, err := gitlabci.Compile(gitlabci.CompileOptions{
 		Root: dir, File: ".gitlab-ci.yml",
 		Git:    gitctx.Info{Root: dir, Branch: "main", Ref: "main", DefaultBranch: "main", SHA: "deadbeef", ShortSHA: "deadbeef"},
-		Source: "push", DefaultImage: "alpine:3.20",
+		Source: "push", DefaultImage: "alpine:3.24",
 	})
 	if err != nil {
 		t.Fatal(err)

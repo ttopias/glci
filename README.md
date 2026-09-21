@@ -68,15 +68,15 @@ After a run:
 `docker:*-dind` services run **privileged** on a per-job network. If you omit TLS settings, glci matches GitLab (`DOCKER_TLS_CERTDIR=/certs`, `DOCKER_HOST=tcp://docker:2376`). To disable TLS (common local setup):
 
 ```yaml
-image: docker:24
+image: docker:29
 services:
-  - docker:24-dind
+  - docker:29-dind
 variables:
   DOCKER_TLS_CERTDIR: ""
   DOCKER_HOST: tcp://docker:2375
 script:
   - docker info
-  - docker run --rm alpine echo ok
+  - docker run --rm alpine:3.24 echo ok
 ```
 
 ## Tests

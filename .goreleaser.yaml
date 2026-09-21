@@ -16,10 +16,10 @@ builds:
       - -X github.com/ttopias/glci/internal/version.Date={{.Date}}
 
 archives:
-  - format: tar.gz
+  - formats: [tar.gz]
     format_overrides:
       - goos: windows
-        format: zip
+        formats: [zip]
     name_template: "{{ .ProjectName }}_{{ .Os }}_{{ .Arch }}"
 
 checksum:

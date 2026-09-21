@@ -333,7 +333,7 @@ func expandJob(name string, body, defaults map[string]any, vars map[string]strin
 		if j.Image == nil || j.Image.Name == "" {
 			img := opts.DefaultImage
 			if img == "" {
-				img = "alpine:3.20"
+				img = "alpine:3.24"
 			}
 			j.Image = &Image{Name: img}
 		}

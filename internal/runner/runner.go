@@ -63,7 +63,7 @@ func Run(opts Options) ([]Result, error) {
 		opts.Executor = "docker"
 	}
 	if opts.DefaultImage == "" {
-		opts.DefaultImage = "alpine:3.20"
+		opts.DefaultImage = "alpine:3.24"
 	}
 	if opts.WorkDir == "" {
 		opts.WorkDir = filepath.Join(opts.Root, ".glci")

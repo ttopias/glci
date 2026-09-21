@@ -27,7 +27,7 @@ func TestInheritAndOnlyExcept(t *testing.T) {
 	dir := t.TempDir()
 	write(t, dir, ".gitlab-ci.yml", `
 default:
-  image: alpine:3.20
+  image: alpine:3.24
   retry: 2
 variables:
   KEEP: yes
@@ -48,7 +48,7 @@ drop:
 	if len(p.Jobs) != 1 || p.Jobs[0].Name != "keep" {
 		t.Fatalf("jobs=%v", names(p.Jobs))
 	}
-	if p.Jobs[0].Image == nil || p.Jobs[0].Image.Name != "alpine:3.20" {
+	if p.Jobs[0].Image == nil || p.Jobs[0].Image.Name != "alpine:3.24" {
 		t.Fatalf("image=%+v", p.Jobs[0].Image)
 	}
 	if p.Jobs[0].Retry != nil {
@@ -121,7 +121,7 @@ include:
 		Root: dir, File: ".gitlab-ci.yml",
 		Git:          gitctx.Info{Root: dir, Branch: "main", Ref: "main", DefaultBranch: "main", SHA: "abc12345", ShortSHA: "abc12345"},
 		Source:       "push",
-		DefaultImage: "alpine:3.20",
+		DefaultImage: "alpine:3.24",
 		Projects:     map[string]string{"group/other": "other"},
 		TemplatesDir: dir + "/templates",
 		Components:   map[string]string{"gitlab.com/org/comp": "comp"},
@@ -182,9 +182,9 @@ func TestServicesAndCacheCompile(t *testing.T) {
 	write(t, dir, "go.mod", "module x\n")
 	write(t, dir, ".gitlab-ci.yml", `
 job:
-  image: docker:24
+  image: docker:29
   services:
-    - name: docker:24-dind
+    - name: docker:29-dind
       alias: docker
   variables:
     DOCKER_TLS_CERTDIR: ""

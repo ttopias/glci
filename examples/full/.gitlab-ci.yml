@@ -4,7 +4,7 @@ include:
 stages: [build, test, deploy]
 
 default:
-  image: alpine:3.20
+  image: alpine:3.24
   retry:
     max: 1
     when: [script_failure]
@@ -35,7 +35,7 @@ test:
   stage: test
   needs: [build]
   image:
-    name: alpine:3.20
+    name: alpine:3.24
     entrypoint: [""]
   parallel:
     matrix:

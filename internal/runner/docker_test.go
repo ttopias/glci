@@ -24,7 +24,7 @@ include:
   - local: ci/common.yml
 
 default:
-  image: alpine:3.20
+  image: alpine:3.24
 
 variables:
   GREETING: hello
@@ -53,7 +53,7 @@ test:
   stage: test
   needs: [build]
   image:
-    name: alpine:3.20
+    name: alpine:3.24
     entrypoint: [""]
   script:
     - test -f artifact.txt
@@ -65,7 +65,7 @@ test:
 		Root: dir, File: ".gitlab-ci.yml",
 		Git:          gitctx.Info{Root: dir, Branch: "main", Ref: "main", DefaultBranch: "main", SHA: "deadbeef", ShortSHA: "deadbeef"},
 		Source:       "push",
-		DefaultImage: "alpine:3.20",
+		DefaultImage: "alpine:3.24",
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -75,7 +75,7 @@ test:
 	}
 	res, err := Run(Options{
 		Root: dir, Pipeline: p, Jobs: p.Jobs, Executor: "docker", Concurrency: 2,
-		Stdout: os.Stdout, Stderr: os.Stderr, DefaultImage: "alpine:3.20",
+		Stdout: os.Stdout, Stderr: os.Stderr, DefaultImage: "alpine:3.24",
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -99,7 +99,7 @@ func TestDockerCustomImageAndService(t *testing.T) {
 	dir := t.TempDir()
 	write(t, dir, ".gitlab-ci.yml", `
 job:
-  image: python:3.12-alpine
+  image: python:3.14-alpine
   services:
     - name: nginx:alpine
       alias: nginx
@@ -113,7 +113,7 @@ job:
 	p, err := gitlabci.Compile(gitlabci.CompileOptions{
 		Root: dir, File: ".gitlab-ci.yml",
 		Git:    gitctx.Info{Root: dir, Branch: "main", Ref: "main", DefaultBranch: "main"},
-		Source: "push", DefaultImage: "alpine:3.20",
+		Source: "push", DefaultImage: "alpine:3.24",
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -140,23 +140,23 @@ func TestDockerInDocker(t *testing.T) {
 	dir := t.TempDir()
 	write(t, dir, ".gitlab-ci.yml", `
 dind:
-  image: docker:24
+  image: docker:29
   services:
-    - name: docker:24-dind
+    - name: docker:29-dind
       alias: docker
   variables:
     DOCKER_TLS_CERTDIR: ""
     DOCKER_HOST: tcp://docker:2375
   script:
     - i=0; until docker info >/tmp/info.txt 2>/tmp/err.txt; do i=$((i+1)); if [ "$i" -gt 40 ]; then cat /tmp/err.txt; exit 1; fi; sleep 1; done
-    - docker run --rm alpine:3.20 echo dind-ok
+    - docker run --rm alpine:3.24 echo dind-ok
   artifacts:
     paths: [/tmp/info.txt]
 `)
 	p, err := gitlabci.Compile(gitlabci.CompileOptions{
 		Root: dir, File: ".gitlab-ci.yml",
 		Git:    gitctx.Info{Root: dir, Branch: "main", Ref: "main", DefaultBranch: "main"},
-		Source: "push", DefaultImage: "alpine:3.20",
+		Source: "push", DefaultImage: "alpine:3.24",
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -183,13 +183,13 @@ func TestDockerFileVarsAndChildPipeline(t *testing.T) {
 	dir := t.TempDir()
 	write(t, dir, "child.yml", `
 kid:
-  image: alpine:3.20
+  image: alpine:3.24
   script:
     - echo child-ok
 `)
 	write(t, dir, ".gitlab-ci.yml", `
 filejob:
-  image: alpine:3.20
+  image: alpine:3.24
   variables:
     KEYFILE:
       value: secret-contents
@@ -204,17 +204,17 @@ bridge:
 	p, err := gitlabci.Compile(gitlabci.CompileOptions{
 		Root: dir, File: ".gitlab-ci.yml",
 		Git:    gitctx.Info{Root: dir, Branch: "main", Ref: "main", DefaultBranch: "main"},
-		Source: "push", DefaultImage: "alpine:3.20",
+		Source: "push", DefaultImage: "alpine:3.24",
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
 	res, err := Run(Options{
 		Root: dir, Pipeline: p, Jobs: p.Jobs, Executor: "docker",
-		Stdout: os.Stdout, Stderr: os.Stderr, DefaultImage: "alpine:3.20",
+		Stdout: os.Stdout, Stderr: os.Stderr, DefaultImage: "alpine:3.24",
 		Compile: gitlabci.CompileOptions{
 			Root: dir, Git: gitctx.Info{Root: dir, Branch: "main", Ref: "main", DefaultBranch: "main"},
-			Source: "push", DefaultImage: "alpine:3.20",
+			Source: "push", DefaultImage: "alpine:3.24",
 		},
 	})
 	if err != nil {
@@ -239,7 +239,7 @@ func TestDockerCache(t *testing.T) {
 	dir := t.TempDir()
 	write(t, dir, ".gitlab-ci.yml", `
 one:
-  image: alpine:3.20
+  image: alpine:3.24
   cache:
     key: k1
     paths: [cached]
@@ -247,7 +247,7 @@ one:
     - mkdir -p cached
     - echo 1 > cached/a
 two:
-  image: alpine:3.20
+  image: alpine:3.24
   needs: [one]
   cache:
     key: k1
@@ -258,7 +258,7 @@ two:
 	p, err := gitlabci.Compile(gitlabci.CompileOptions{
 		Root: dir, File: ".gitlab-ci.yml",
 		Git:    gitctx.Info{Root: dir, Branch: "main", Ref: "main", DefaultBranch: "main"},
-		Source: "push", DefaultImage: "alpine:3.20",
+		Source: "push", DefaultImage: "alpine:3.24",
 	})
 	if err != nil {
 		t.Fatal(err)

@@ -212,7 +212,7 @@ func TestDefaultImageAndHooks(t *testing.T) {
 	dir := t.TempDir()
 	write(t, dir, ".gitlab-ci.yml", `
 default:
-  image: python:3.12-alpine
+  image: python:3.14-alpine
   before_script: [echo def]
 job:
   hooks:
@@ -230,7 +230,7 @@ job:
 		t.Fatalf("jobs=%v", names(p.Jobs))
 	}
 	j := p.Jobs[0]
-	if j.Image == nil || j.Image.Name != "python:3.12-alpine" {
+	if j.Image == nil || j.Image.Name != "python:3.14-alpine" {
 		t.Fatalf("image=%+v", j.Image)
 	}
 	if len(j.PreGetSources) != 1 {
@@ -264,7 +264,7 @@ func compileDir(t *testing.T, dir, branch string) *Pipeline {
 	p, err := Compile(CompileOptions{
 		Root: dir, File: ".gitlab-ci.yml",
 		Git:    gitctx.Info{Root: dir, Branch: branch, Ref: branch, DefaultBranch: "main", SHA: "abc12345", ShortSHA: "abc12345"},
-		Source: "push", DefaultImage: "alpine:3.20",
+		Source: "push", DefaultImage: "alpine:3.24",
 	})
 	if err != nil {
 		t.Fatal(err)
