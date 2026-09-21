@@ -19,13 +19,17 @@ jobs:
         run: |
           docker info
           test -S /var/run/docker.sock
+          echo "DOCKER_HOST=unix:///var/run/docker.sock" >> "$GITHUB_ENV"
       - name: Pre-pull test images
         run: |
           docker pull alpine:3.24
           docker pull nginx:alpine
           docker pull python:3.14-alpine
           docker pull docker:29
+          docker run --rm alpine:3.24 echo docker-run-ok
       - name: Test
+        env:
+          DOCKER_HOST: unix:///var/run/docker.sock
         shell: bash
         run: |
           set -o pipefail

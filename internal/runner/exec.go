@@ -2,6 +2,7 @@ package runner
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 	"io"
 	"os"
@@ -44,18 +45,21 @@ func runDocker(opts Options, j gitlabci.Job, build, script string) (int, string,
 	if jobID == "" {
 		jobID = gitlabci.NewID()
 	}
-	net := "glci-" + jobID
-	if out, err := exec.Command("docker", "network", "create", net).CombinedOutput(); err != nil {
-		if !strings.Contains(string(out), "already exists") {
-			return 1, "", fmt.Errorf("docker network: %s", strings.TrimSpace(string(out)))
+	net := ""
+	if jobNeedsNetwork(j) {
+		net = "glci-" + jobID
+		if out, err := dockerCmd("network", "create", net).CombinedOutput(); err != nil {
+			if !strings.Contains(string(out), "already exists") {
+				return 1, "", fmt.Errorf("docker network: %s", strings.TrimSpace(string(out)))
+			}
 		}
+		defer func() { _ = dockerCmd("network", "rm", net).Run() }()
 	}
-	defer func() { _ = exec.Command("docker", "network", "rm", net).Run() }()
 
 	var svcNames []string
 	defer func() {
 		for i := len(svcNames) - 1; i >= 0; i-- {
-			_ = exec.Command("docker", "rm", "-f", svcNames[i]).Run()
+			_ = dockerCmd("rm", "-f", svcNames[i]).Run()
 		}
 	}()
 
@@ -92,7 +96,7 @@ func runDocker(opts Options, j gitlabci.Job, build, script string) (int, string,
 			args = append(args, svc.Entrypoint[1:]...)
 		}
 		args = append(args, svc.Command...)
-		cmd := exec.Command("docker", args...)
+		cmd := dockerCmd(args...)
 		cmd.Stdout = opts.Stdout
 		cmd.Stderr = opts.Stderr
 		if err := cmd.Run(); err != nil {
@@ -106,7 +110,7 @@ func runDocker(opts Options, j gitlabci.Job, build, script string) (int, string,
 	if len(container) > 60 {
 		container = container[:60]
 	}
-	defer func() { _ = exec.Command("docker", "rm", "-f", container).Run() }()
+	defer func() { _ = dockerCmd("rm", "-f", container).Run() }()
 
 	projectDir := "/builds/" + j.Variables["CI_PROJECT_PATH"]
 	if projectDir == "/builds/" || strings.HasSuffix(projectDir, "/builds/") {
@@ -125,10 +129,13 @@ func runDocker(opts Options, j gitlabci.Job, build, script string) (int, string,
 		entrypoint = j.Image.Entrypoint
 	}
 
-	args := []string{"run", "--name", container, "--network", net, "-w", projectDir,
+	args := []string{"run", "--name", container, "-w", projectDir,
 		"-v", abs(build) + ":" + projectDir,
 		"-v", abs(script) + ":/glci/job.sh:ro",
 		"--entrypoint", entrypoint[0],
+	}
+	if net != "" {
+		args = append(args, "--network", net)
 	}
 	args = bindHostDocker(args, j)
 	if opts.Privileged {
@@ -152,7 +159,7 @@ func runDocker(opts Options, j gitlabci.Job, build, script string) (int, string,
 	args = append(args, entrypoint[1:]...)
 	args = append(args, "/glci/job.sh")
 
-	cmd := exec.Command("docker", args...)
+	cmd := dockerCmd(args...)
 	var buf bytes.Buffer
 	cmd.Stdout = io.MultiWriter(opts.Stdout, &buf)
 	cmd.Stderr = io.MultiWriter(opts.Stderr, &buf)
@@ -183,12 +190,11 @@ func ensureImage(name, policy string) error {
 }
 
 func imageExists(name string) bool {
-	err := exec.Command("docker", "image", "inspect", name).Run()
-	return err == nil
+	return dockerCmd("image", "inspect", name).Run() == nil
 }
 
 func dockerPull(name string) error {
-	cmd := exec.Command("docker", "pull", name)
+	cmd := dockerCmd("pull", name)
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	return cmd.Run()
@@ -204,7 +210,7 @@ func dockerLogin(j gitlabci.Job) {
 	if registry == "localhost:5000" || registry == "localhost" {
 		return
 	}
-	cmd := exec.Command("docker", "login", "-u", user, "--password-stdin", registry)
+	cmd := dockerCmd("login", "-u", user, "--password-stdin", registry)
 	cmd.Stdin = strings.NewReader(pass)
 	_ = cmd.Run()
 }
@@ -217,7 +223,7 @@ func asDockerString(v any) string {
 func waitHealthy(id string, d time.Duration) {
 	deadline := time.Now().Add(d)
 	for time.Now().Before(deadline) {
-		out, err := exec.Command("docker", "inspect", "-f", "{{.State.Running}} {{.State.Status}}", id).Output()
+		out, err := dockerCmd("inspect", "-f", "{{.State.Running}} {{.State.Status}}", id).Output()
 		if err == nil && strings.Contains(string(out), "true") {
 			time.Sleep(400 * time.Millisecond)
 			return
@@ -230,6 +236,55 @@ func isDindImage(name string) bool {
 	return strings.Contains(strings.ToLower(name), "dind")
 }
 
+func jobNeedsNetwork(j gitlabci.Job) bool {
+	for _, svc := range j.Services {
+		if !isDindImage(svc.Name) {
+			return true
+		}
+	}
+	return false
+}
+
+func dockerBin() string {
+	if p, err := exec.LookPath("docker"); err == nil {
+		return p
+	}
+	for _, p := range []string{"/usr/bin/docker", "/usr/local/bin/docker"} {
+		if existingFile(p) {
+			return p
+		}
+	}
+	return "docker"
+}
+
+func dockerHostArgs() []string {
+	if sock := dockerSocketPath(); sock != "" {
+		return []string{"-H", "unix://" + sock}
+	}
+	return nil
+}
+
+func dockerCmd(args ...string) *exec.Cmd {
+	all := append(append([]string{}, dockerHostArgs()...), args...)
+	return exec.Command(dockerBin(), all...)
+}
+
+func dockerPing() error {
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancel()
+	args := append(dockerHostArgs(), "info")
+	cmd := exec.CommandContext(ctx, dockerBin(), args...)
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		msg := strings.TrimSpace(string(out))
+		if msg == "" {
+			return err
+		}
+		return fmt.Errorf("%w: %s", err, msg)
+	}
+	return nil
+}
+
 // bindHostDocker mounts the host daemon, matching a typical GitLab docker runner.
 // Official docker images default DOCKER_TLS_CERTDIR=/certs; always clear TLS for the socket.
 func bindHostDocker(args []string, j gitlabci.Job) []string {
@@ -238,7 +293,22 @@ func bindHostDocker(args []string, j gitlabci.Job) []string {
 	if sock == "" {
 		return args
 	}
-	return append(args, "-v", sock+":/var/run/docker.sock")
+	args = append(args, "-v", sock+":/var/run/docker.sock")
+	if gid := fileGID(sock); gid != "" && gid != "0" {
+		args = append(args, "--group-add", gid)
+	}
+	return args
+}
+
+func fileGID(path string) string {
+	out, err := exec.Command("stat", "-c", "%g", path).Output()
+	if err != nil {
+		out, err = exec.Command("stat", "-f", "%g", path).Output()
+		if err != nil {
+			return ""
+		}
+	}
+	return strings.TrimSpace(string(out))
 }
 
 func applyHostDockerVars(m map[string]string) {
@@ -274,6 +344,9 @@ func unixSocketFile(host string) string {
 
 func dockerSocketPath() string {
 	candidates := []string{"/var/run/docker.sock"}
+	if existingFile(candidates[0]) {
+		return candidates[0]
+	}
 	if home, err := os.UserHomeDir(); err == nil {
 		candidates = append(candidates,
 			filepath.Join(home, ".docker", "run", "docker.sock"),
@@ -281,7 +354,7 @@ func dockerSocketPath() string {
 		)
 	}
 	ctx := ""
-	if out, err := exec.Command("docker", "context", "inspect", "-f", "{{.Endpoints.docker.Host}}").Output(); err == nil {
+	if out, err := exec.Command(dockerBin(), "context", "inspect", "-f", "{{.Endpoints.docker.Host}}").Output(); err == nil {
 		ctx = strings.TrimSpace(string(out))
 	}
 	return pickDockerSocket(os.Getenv("DOCKER_HOST"), ctx, candidates)

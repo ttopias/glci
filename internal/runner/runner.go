@@ -904,7 +904,7 @@ func collectDotenv(opts Options, j gitlabci.Job) (map[string]string, error) {
 }
 
 func dockerAvailable() bool {
-	return exec.Command("docker", "info").Run() == nil
+	return dockerPing() == nil
 }
 
 func prepareWorkDir(dir string, reset bool) error {

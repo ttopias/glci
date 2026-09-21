@@ -12,11 +12,12 @@ import (
 
 func skipDockerE2E(t *testing.T) {
 	t.Helper()
-	switch dockerE2EAction(dockerAvailable(), os.Getenv("GITHUB_ACTIONS")) {
+	err := dockerPing()
+	switch dockerE2EAction(err == nil, os.Getenv("GITHUB_ACTIONS")) {
 	case "run":
 		return
 	case "fatal":
-		t.Fatal("docker is required on GitHub Actions; docker info failed")
+		t.Fatalf("docker is required on GitHub Actions; docker info failed: %v", err)
 	default:
 		t.Skip("docker not available")
 	}
@@ -81,6 +82,18 @@ func TestIsDindImage(t *testing.T) {
 	}
 	if isDindImage("nginx:alpine") || isDindImage("docker:29") {
 		t.Fatal("non-dind images must still start as services")
+	}
+}
+
+func TestJobNeedsNetwork(t *testing.T) {
+	if jobNeedsNetwork(gitlabci.Job{}) {
+		t.Fatal("no services should use the default bridge")
+	}
+	if jobNeedsNetwork(gitlabci.Job{Services: []gitlabci.Service{{Name: "docker:29-dind"}}}) {
+		t.Fatal("skipped dind sidecars should not create a job network")
+	}
+	if !jobNeedsNetwork(gitlabci.Job{Services: []gitlabci.Service{{Name: "nginx:alpine"}}}) {
+		t.Fatal("real services need a user-defined network")
 	}
 }
 
