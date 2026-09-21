@@ -59,63 +59,27 @@ func runDocker(opts Options, j gitlabci.Job, build, script string) (int, string,
 		}
 	}()
 
-	dindTLS := false
-	dindCertsHost := ""
-	dindAlias := ""
-	for _, svc := range j.Services {
-		if isDindImage(svc.Name) {
-			dindAlias = svc.Alias
-			if dindAlias == "" {
-				dindAlias = serviceAlias(svc.Name)
-			}
-			tlsDir, tlsSet := j.Variables["DOCKER_TLS_CERTDIR"]
-			if !tlsSet {
-				j.Variables["DOCKER_TLS_CERTDIR"] = "/certs"
-				tlsDir = "/certs"
-			}
-			if tlsDir != "" {
-				dindTLS = true
-				dindCertsHost = filepath.Join(opts.WorkDir, "tmp", "dind-certs-"+jobID)
-				_ = os.MkdirAll(filepath.Join(dindCertsHost, "client"), 0o755)
-				if _, ok := j.Variables["DOCKER_HOST"]; !ok {
-					j.Variables["DOCKER_HOST"] = "tcp://" + dindAlias + ":2376"
-				}
-				if _, ok := j.Variables["DOCKER_CERT_PATH"]; !ok {
-					j.Variables["DOCKER_CERT_PATH"] = "/certs/client"
-				}
-			} else if _, ok := j.Variables["DOCKER_HOST"]; !ok {
-				j.Variables["DOCKER_HOST"] = "tcp://" + dindAlias + ":2375"
-			}
-			if _, ok := j.Variables["DOCKER_DRIVER"]; !ok {
-				j.Variables["DOCKER_DRIVER"] = "overlay2"
-			}
-			break
-		}
-	}
-
 	for i, svc := range j.Services {
+		if isDindImage(svc.Name) {
+			// Host daemon is the only Docker; nested docker:*-dind sidecars are unused.
+			continue
+		}
 		id := fmt.Sprintf("glci-%s-svc-%d", jobID[:min(8, len(jobID))], i)
-		args := []string{"run", "-d", "--name", id, "--network", net, "--network-alias", svc.Alias}
+		alias := svc.Alias
+		if alias == "" {
+			alias = serviceAlias(svc.Name)
+		}
+		args := []string{"run", "-d", "--name", id, "--network", net, "--network-alias", alias}
 		for _, a := range svc.AliasList {
 			if a != "" && a != svc.Alias {
 				args = append(args, "--network-alias", a)
 			}
 		}
-		dind := isDindImage(svc.Name)
-		if dind || opts.Privileged {
+		if opts.Privileged {
 			args = append(args, "--privileged")
-			if dind {
-				args = append(args, "--cgroupns=host")
-			}
 		}
 		for k, v := range svc.Variables {
 			args = append(args, "-e", k+"="+v)
-		}
-		if dind {
-			args = append(args, "-e", "DOCKER_TLS_CERTDIR="+j.Variables["DOCKER_TLS_CERTDIR"])
-			if dindCertsHost != "" {
-				args = append(args, "-v", abs(dindCertsHost)+":/certs")
-			}
 		}
 		if err := ensureImage(svc.Name, svc.PullPolicy); err != nil {
 			return 1, "", fmt.Errorf("service image %s: %w", svc.Name, err)
@@ -136,11 +100,6 @@ func runDocker(opts Options, j gitlabci.Job, build, script string) (int, string,
 		}
 		svcNames = append(svcNames, id)
 		waitHealthy(id, 45*time.Second)
-		if dind {
-			if err := waitForDind(id, dindCertsHost, dindTLS, 90*time.Second); err != nil {
-				return 1, "", err
-			}
-		}
 	}
 
 	container := "glci-job-" + jobID
@@ -166,22 +125,13 @@ func runDocker(opts Options, j gitlabci.Job, build, script string) (int, string,
 		entrypoint = j.Image.Entrypoint
 	}
 
-	privileged := opts.Privileged || isDindImage(j.Image.Name)
-	for _, svc := range j.Services {
-		if isDindImage(svc.Name) {
-			privileged = true
-			break
-		}
-	}
 	args := []string{"run", "--name", container, "--network", net, "-w", projectDir,
 		"-v", abs(build) + ":" + projectDir,
 		"-v", abs(script) + ":/glci/job.sh:ro",
 		"--entrypoint", entrypoint[0],
 	}
-	if dindCertsHost != "" {
-		args = append(args, "-v", abs(dindCertsHost)+":/certs")
-	}
-	if privileged {
+	args = bindHostDocker(args, j)
+	if opts.Privileged {
 		args = append(args, "--privileged")
 	}
 	if j.Image.Docker != nil {
@@ -277,8 +227,85 @@ func waitHealthy(id string, d time.Duration) {
 }
 
 func isDindImage(name string) bool {
-	n := strings.ToLower(name)
-	return strings.Contains(n, "dind")
+	return strings.Contains(strings.ToLower(name), "dind")
+}
+
+// bindHostDocker mounts the host daemon, matching a typical GitLab docker runner.
+// Official docker images default DOCKER_TLS_CERTDIR=/certs; always clear TLS for the socket.
+func bindHostDocker(args []string, j gitlabci.Job) []string {
+	applyHostDockerVars(j.Variables)
+	sock := dockerSocketPath()
+	if sock == "" {
+		return args
+	}
+	return append(args, "-v", sock+":/var/run/docker.sock")
+}
+
+func applyHostDockerVars(m map[string]string) {
+	if m == nil {
+		return
+	}
+	m["DOCKER_HOST"] = "unix:///var/run/docker.sock"
+	m["DOCKER_TLS_CERTDIR"] = ""
+	delete(m, "DOCKER_CERT_PATH")
+	delete(m, "DOCKER_TLS_VERIFY")
+}
+
+func existingFile(path string) bool {
+	st, err := os.Stat(path)
+	return err == nil && !st.IsDir()
+}
+
+func unixSocketFile(host string) string {
+	h := strings.TrimSpace(host)
+	if !strings.HasPrefix(strings.ToLower(h), "unix://") {
+		return ""
+	}
+	p := h[len("unix://"):]
+	if p == "" || !filepath.IsAbs(p) {
+		return ""
+	}
+	p = filepath.Clean(p)
+	if existingFile(p) {
+		return p
+	}
+	return ""
+}
+
+func dockerSocketPath() string {
+	candidates := []string{"/var/run/docker.sock"}
+	if home, err := os.UserHomeDir(); err == nil {
+		candidates = append(candidates,
+			filepath.Join(home, ".docker", "run", "docker.sock"),
+			filepath.Join(home, ".colima", "default", "docker.sock"),
+		)
+	}
+	ctx := ""
+	if out, err := exec.Command("docker", "context", "inspect", "-f", "{{.Endpoints.docker.Host}}").Output(); err == nil {
+		ctx = strings.TrimSpace(string(out))
+	}
+	return pickDockerSocket(os.Getenv("DOCKER_HOST"), ctx, candidates)
+}
+
+// pickDockerSocket chooses a host path that can be bind-mounted into job containers.
+// /var/run/docker.sock is preferred when it exists: Docker Desktop on macOS exposes that
+// path into the Linux VM, while unix://~/.docker/run/docker.sock is not mountable there.
+func pickDockerSocket(envHost, contextHost string, candidates []string) string {
+	if len(candidates) > 0 && existingFile(candidates[0]) {
+		return candidates[0]
+	}
+	if p := unixSocketFile(envHost); p != "" {
+		return p
+	}
+	if p := unixSocketFile(contextHost); p != "" {
+		return p
+	}
+	for _, p := range candidates[1:] {
+		if existingFile(p) {
+			return p
+		}
+	}
+	return ""
 }
 
 func serviceAlias(image string) string {
@@ -293,25 +320,6 @@ func serviceAlias(image string) string {
 		return "docker"
 	}
 	return s
-}
-
-func waitForDind(id, certsHost string, tls bool, d time.Duration) error {
-	deadline := time.Now().Add(d)
-	for time.Now().Before(deadline) {
-		if tls && certsHost != "" {
-			if _, err := os.Stat(filepath.Join(certsHost, "client", "ca.pem")); err == nil {
-				time.Sleep(400 * time.Millisecond)
-				return nil
-			}
-		} else {
-			out, err := exec.Command("docker", "exec", id, "docker", "info").CombinedOutput()
-			if err == nil && (bytes.Contains(out, []byte("Server Version")) || bytes.Contains(out, []byte("Containers:"))) {
-				return nil
-			}
-		}
-		time.Sleep(500 * time.Millisecond)
-	}
-	return fmt.Errorf("docker-in-docker service %s did not become ready", id)
 }
 
 func runWithTimeout(cmd *exec.Cmd, d time.Duration) (int, error) {

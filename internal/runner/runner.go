@@ -68,11 +68,10 @@ func Run(opts Options) ([]Result, error) {
 	if opts.WorkDir == "" {
 		opts.WorkDir = filepath.Join(opts.Root, ".glci")
 	}
-	for _, d := range []string{"builds", "artifacts", "cache", "pages", "logs", "tmp"} {
-		if err := os.MkdirAll(filepath.Join(opts.WorkDir, d), 0o755); err != nil {
-			return nil, err
-		}
+	if err := prepareWorkDir(opts.WorkDir, opts.TriggerDepth == 0); err != nil {
+		return nil, err
 	}
+	defer cleanupTemp(opts.WorkDir)
 
 	jobs := opts.Jobs
 	byName := map[string]gitlabci.Job{}
@@ -906,6 +905,45 @@ func collectDotenv(opts Options, j gitlabci.Job) (map[string]string, error) {
 
 func dockerAvailable() bool {
 	return exec.Command("docker", "info").Run() == nil
+}
+
+func prepareWorkDir(dir string, reset bool) error {
+	if reset {
+		if err := resetWorkDir(dir); err != nil {
+			return err
+		}
+	}
+	for _, d := range []string{"builds", "artifacts", "cache", "pages", "logs", "tmp"} {
+		if err := os.MkdirAll(filepath.Join(dir, d), 0o755); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func resetWorkDir(dir string) error {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return err
+	}
+	for _, e := range entries {
+		if e.Name() == "cache" {
+			continue
+		}
+		if err := os.RemoveAll(filepath.Join(dir, e.Name())); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func cleanupTemp(dir string) {
+	for _, name := range []string{"tmp", "builds"} {
+		_ = os.RemoveAll(filepath.Join(dir, name))
+	}
 }
 
 func writeSkipLog(opts Options, name, reason string) string {

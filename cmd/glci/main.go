@@ -63,8 +63,9 @@ Usage:
   glci version              Print the version
 
 Created jobs run by default. when:manual jobs need --manual or --job NAME.
-Logs land in .glci/logs/, artifacts in .glci/artifacts/, summary in .glci/report.json.
-Docker-in-Docker (docker:*-dind services) is privileged automatically.
+Each run refreshes .glci/ except cache; tmp and builds are deleted afterward.
+Jobs bind the host Docker socket (no dind service or DOCKER_* required).
+Copied docker:*-dind services are ignored.
 
 Flags:
   -C, --dir DIR             Project directory (default .)
@@ -77,7 +78,7 @@ Flags:
   --manual                  Also run when:manual jobs
   --shell                   Run on the host instead of Docker
   --docker                  Force docker executor (default)
-  --privileged              Privileged containers (also auto for dind)
+  --privileged              Privileged containers
   --allow-remote            Allow include:remote HTTP fetches
   --dry-run                 Compile and print the plan only
   --concurrency N           Parallel jobs (default 4)

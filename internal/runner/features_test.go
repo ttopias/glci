@@ -319,6 +319,7 @@ bridge:
     include: child.yml
     strategy: depend
 `)
+	write(t, dir, ".glci/cache/keep/x", "cached")
 	p := mustCompile(t, dir)
 	res, err := Run(Options{
 		Root: dir, Pipeline: p, Jobs: p.Jobs, Executor: "shell",
@@ -336,6 +337,9 @@ bridge:
 	}
 	if _, err := os.Stat(filepath.Join(dir, ".glci", "child-bridge", "logs", "kid.log")); err != nil {
 		t.Fatalf("child job did not run: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(dir, ".glci", "cache", "keep", "x")); err != nil {
+		t.Fatal("parent cache was wiped by a child pipeline")
 	}
 }
 

@@ -15,7 +15,7 @@ func TestHelpAndVersion(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, s := range []string{"glci run", "glci upgrade", "--manual"} {
+	for _, s := range []string{"glci run", "glci upgrade", "--manual", "host Docker socket", "docker:*-dind"} {
 		if !strings.Contains(out, s) {
 			t.Fatalf("help missing %q:\n%s", s, out)
 		}

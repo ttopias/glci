@@ -15,11 +15,26 @@ jobs:
         with:
           go-version: "1.27.1"
           check-latest: true
+      - name: Docker
+        run: |
+          docker info
+          test -S /var/run/docker.sock
+      - name: Pre-pull test images
+        run: |
+          docker pull alpine:3.24
+          docker pull nginx:alpine
+          docker pull python:3.14-alpine
+          docker pull docker:29
       - name: Test
         shell: bash
         run: |
           set -o pipefail
           go test ./... -count=1 -timeout 15m -v | tee test-output.txt
+          # go test -v prints: --- SKIP: TestName (0.00s)
+          if grep -E '^--- SKIP: TestDocker' test-output.txt; then
+            echo "docker e2e tests must not skip on GitHub Actions" >&2
+            exit 1
+          fi
       - uses: actions/upload-artifact@v7
         if: failure()
         with:

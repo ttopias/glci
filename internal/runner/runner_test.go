@@ -219,6 +219,65 @@ manual_job:
 	}
 }
 
+func TestWorkDirRefreshAndTempCleanup(t *testing.T) {
+	dir := t.TempDir()
+	work := filepath.Join(dir, ".glci")
+	write(t, dir, ".gitlab-ci.yml", `
+old:
+  script: echo first > a.txt
+  artifacts:
+    paths: [a.txt]
+`)
+	write(t, work, "logs/stale.log", "old")
+	write(t, work, "cache/keep/x", "cached")
+
+	runShell := func() {
+		t.Helper()
+		p := mustCompile(t, dir)
+		if _, err := Run(Options{Root: dir, Pipeline: p, Jobs: p.Jobs, Executor: "shell", Stdout: os.Stdout, Stderr: os.Stderr}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	exists := func(rel string) bool {
+		_, err := os.Stat(filepath.Join(work, rel))
+		return err == nil
+	}
+
+	runShell()
+	if exists("logs/stale.log") {
+		t.Fatal("stale log survived a new run")
+	}
+	if !exists("cache/keep/x") {
+		t.Fatal("cache should be kept across runs")
+	}
+	if !exists("artifacts/old/a.txt") {
+		t.Fatal("expected artifacts from this run")
+	}
+	if exists("tmp") {
+		t.Fatal("tmp should be removed after the run")
+	}
+	if exists("builds") {
+		t.Fatal("builds should be removed after the run")
+	}
+
+	write(t, dir, ".gitlab-ci.yml", `
+new:
+  script: echo second > b.txt
+  artifacts:
+    paths: [b.txt]
+`)
+	runShell()
+	if exists("artifacts/old/a.txt") {
+		t.Fatal("previous run artifacts should be cleared")
+	}
+	if !exists("artifacts/new/b.txt") {
+		t.Fatal("expected artifacts from the second run")
+	}
+	if !exists("logs/new.log") {
+		t.Fatal("expected log from the second run")
+	}
+}
+
 func write(t *testing.T, dir, name, body string) {
 	t.Helper()
 	p := filepath.Join(dir, name)

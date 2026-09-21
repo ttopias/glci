@@ -4,7 +4,7 @@ Run GitLab CI/CD pipelines on your machine, in Docker. No GitLab server.
 
 `glci` compiles `.gitlab-ci.yml` the way GitLab does — includes, extends, `!reference`, rules, matrix, needs, artifacts, services, docker-in-docker — then runs created jobs in local containers.
 
-Default `glci` (or `glci run`) runs every created job except `when: manual`. Logs and artifacts for every job are kept under `.glci/`. Pass `--manual` to include those jobs, or `--job NAME` to run a specific manual job.
+Default `glci` (or `glci run`) runs every created job except `when: manual`. Each run refreshes `.glci/` (logs, artifacts, report). Job workspace copies and other temp files are removed when the run finishes. Pass `--manual` to include those jobs, or `--job NAME` to run a specific manual job.
 
 ## Install / upgrade
 
@@ -60,24 +60,23 @@ After a run:
 | `.glci/logs/<job>.log` | Full job log |
 | `.glci/artifacts/<job>/` | Job artifacts (saved even when the job failed) |
 | `.glci/report.json` | Status, log path, and artifact path per job |
-| `.glci/builds/<job>/` | Workspace copy used for that job |
+| `.glci/cache/` | Job caches (kept across runs) |
 | `.glci/pages/` | Pages output when a pages job ran |
 
-## Docker-in-Docker
+`.glci/tmp/` and `.glci/builds/` are used while jobs run and are deleted afterward.
 
-`docker:*-dind` services run **privileged** on a per-job network. If you omit TLS settings, glci matches GitLab (`DOCKER_TLS_CERTDIR=/certs`, `DOCKER_HOST=tcp://docker:2376`). To disable TLS (common local setup):
+## Docker CLI (no pipeline extras)
+
+Like a typical remote GitLab docker runner, glci binds the **host Docker socket** into every job and points the Docker CLI at it. You do **not** need a `docker:*-dind` service or `DOCKER_HOST` / `DOCKER_TLS_CERTDIR` in `.gitlab-ci.yml`.
 
 ```yaml
-image: docker:29
-services:
-  - docker:29-dind
-variables:
-  DOCKER_TLS_CERTDIR: ""
-  DOCKER_HOST: tcp://docker:2375
+image: my.registry/ci-with-docker:latest   # or docker:29, etc.
 script:
-  - docker info
-  - docker run --rm alpine:3.24 echo ok
+  - docker build -t app .
+  - docker run --rm app
 ```
+
+Copied GitLab templates that still list `services: docker:*-dind` or `DOCKER_HOST=tcp://docker:2375` still use the host socket; nested DinD is not started.
 
 ## Tests
 
@@ -87,7 +86,7 @@ go test ./...
 
 Compiler tests cover includes (local / project / template / component), `spec:inputs`, anchors, `!reference`, `default`, `extends`, `inherit`, rules, `only`/`except`, workflow, needs, matrix, artifacts/dotenv, cache, retry, timeout, environments, coverage, pages, child pipelines, file variables, secrets/`id_tokens`.
 
-Docker e2e tests (skipped if the daemon is down) cover custom images, services, artifacts, coverage, and docker-in-docker.
+Docker e2e tests (skipped only if `docker info` fails locally) cover custom images, services, artifacts, coverage, and Docker CLI via the host socket. On GitHub Actions a missing daemon fails the job instead of skipping.
 
 ## Local config (`.glci.yml`)
 
@@ -117,7 +116,7 @@ File-type variables, secrets, and `id_tokens` are filled from `GLCI_SECRET_<NAME
 
 **Global:** `default`, `include` (local / project / template / component / remote), `stages`, `variables` (including `file: true`), `workflow`, `spec:inputs`.
 
-**Jobs:** `script`, `run`, `before_script`, `after_script`, `hooks:pre_get_sources_script`, `image` (name, entrypoint, pull_policy, docker.user/platform/privileged), `services` (alias, command, entrypoint, variables, **dind**), `stage`, `needs`, `dependencies`, `rules`, `only`/`except`, `when`, `allow_failure`, `retry`, `timeout`, `start_in`, `parallel` / `parallel:matrix`, `artifacts` (paths, exclude, untracked, reports:dotenv), `cache` (key, key:files, fallback_keys, policy), `extends`, `inherit`, `environment`, `coverage`, `tags` (ignored for scheduling), `resource_group`, `interruptible`, `pages` / `publish`, `release`, `trigger` / child pipelines (`include` + `strategy:depend`), `secrets`, `id_tokens`.
+**Jobs:** `script`, `run`, `before_script`, `after_script`, `hooks:pre_get_sources_script`, `image` (name, entrypoint, pull_policy, docker.user/platform/privileged), `services` (alias, command, entrypoint, variables), `stage`, `needs`, `dependencies`, `rules`, `only`/`except`, `when`, `allow_failure`, `retry`, `timeout`, `start_in`, `parallel` / `parallel:matrix`, `artifacts` (paths, exclude, untracked, reports:dotenv), `cache` (key, key:files, fallback_keys, policy), `extends`, `inherit`, `environment`, `coverage`, `tags` (ignored for scheduling), `resource_group`, `interruptible`, `pages` / `publish`, `release`, `trigger` / child pipelines (`include` + `strategy:depend`), `secrets`, `id_tokens`.
 
 **YAML:** anchors, merge keys, `!reference`, nested includes, `include:rules`, `$[[ inputs.x ]]`.
 
