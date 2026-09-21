@@ -488,6 +488,7 @@ func runOnce(opts Options, j gitlabci.Job) Result {
 			j.Image = &gitlabci.Image{Name: opts.DefaultImage}
 		}
 		code, log, err = runDocker(jobOpts, j, build, scriptPath)
+		reclaimWorkspace(build)
 	}
 	_ = logFile.Close()
 

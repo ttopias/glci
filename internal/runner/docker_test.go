@@ -430,7 +430,8 @@ func requireJobOK(t *testing.T, res []Result, n int) {
 	}
 	for _, r := range res {
 		if r.Status != "success" {
-			t.Fatalf("%s: %s", r.Name, r.Status)
+			logb, _ := os.ReadFile(r.LogPath)
+			t.Fatalf("%s: %s\n%s", r.Name, r.Status, logb)
 		}
 	}
 }

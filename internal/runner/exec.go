@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -267,6 +268,17 @@ func dockerHostArgs() []string {
 func dockerCmd(args ...string) *exec.Cmd {
 	all := append(append([]string{}, dockerHostArgs()...), args...)
 	return exec.Command(dockerBin(), all...)
+}
+
+// reclaimWorkspace makes root-owned bind-mount files readable by the host user
+// so cache and artifacts can be copied on Linux runners.
+func reclaimWorkspace(build string) {
+	uid := os.Getuid()
+	if uid <= 0 || build == "" {
+		return
+	}
+	spec := strconv.Itoa(uid) + ":" + strconv.Itoa(os.Getgid())
+	_ = dockerCmd("run", "--rm", "-v", abs(build)+":/glci-w", "alpine:3.24", "chown", "-R", spec, "/glci-w").Run()
 }
 
 func dockerPing() error {
