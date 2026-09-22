@@ -28,6 +28,7 @@ type Options struct {
 	IncludeManual bool     // when:manual jobs run only with this or --job NAME
 	SelectedJobs  []string // --job names; a matching manual job is treated as specified
 	DryRun        bool
+	Debug         bool // keep .glci/builds and .glci/tmp after the run
 	Privileged    bool
 	Concurrency   int
 	DefaultImage  string
@@ -71,7 +72,9 @@ func Run(opts Options) ([]Result, error) {
 	if err := prepareWorkDir(opts.WorkDir, opts.TriggerDepth == 0); err != nil {
 		return nil, err
 	}
-	defer cleanupTemp(opts.WorkDir)
+	if !opts.Debug {
+		defer cleanupTemp(opts.WorkDir)
+	}
 
 	jobs := opts.Jobs
 	byName := map[string]gitlabci.Job{}
@@ -520,7 +523,7 @@ func runOnce(opts Options, j gitlabci.Job) Result {
 	if st, err := os.Stat(artDir); err == nil && st.IsDir() {
 		res.ArtifactsPath = artDir
 	}
-	if j.Release != nil {
+	if j.Release != nil && len(j.Release) > 0 {
 		_ = os.WriteFile(filepath.Join(opts.WorkDir, "release-"+safe(j.Name)+".json"), mustJSON(j.Release), 0o644)
 	}
 	if j.Environment != nil {

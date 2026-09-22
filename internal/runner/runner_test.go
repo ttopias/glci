@@ -278,6 +278,39 @@ new:
 	}
 }
 
+func TestDebugKeepsBuildsAndTmp(t *testing.T) {
+	dir := t.TempDir()
+	work := filepath.Join(dir, ".glci")
+	write(t, dir, ".gitlab-ci.yml", `
+job:
+  script: echo hello
+`)
+	p := mustCompile(t, dir)
+	opts := Options{Root: dir, Pipeline: p, Jobs: p.Jobs, Executor: "shell", Stdout: os.Stdout, Stderr: os.Stderr}
+	if _, err := Run(opts); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(work, "tmp")); err == nil {
+		t.Fatal("tmp should be removed when Debug is false")
+	}
+	if _, err := os.Stat(filepath.Join(work, "builds")); err == nil {
+		t.Fatal("builds should be removed when Debug is false")
+	}
+
+	opts.Debug = true
+	if _, err := Run(opts); err != nil {
+		t.Fatal(err)
+	}
+	script := filepath.Join(work, "tmp", "job.sh")
+	if _, err := os.Stat(script); err != nil {
+		t.Fatalf("job script should remain with Debug: %v", err)
+	}
+	build := filepath.Join(work, "builds", "job")
+	if st, err := os.Stat(build); err != nil || !st.IsDir() {
+		t.Fatalf("build dir should remain with Debug: %v", err)
+	}
+}
+
 func write(t *testing.T, dir, name, body string) {
 	t.Helper()
 	p := filepath.Join(dir, name)

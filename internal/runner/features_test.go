@@ -1,6 +1,7 @@
 package runner
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -359,6 +360,41 @@ down:
 	p := mustCompile(t, dir)
 	if _, err := Run(Options{Root: dir, Pipeline: p, Jobs: p.Jobs, Executor: "shell", Stdout: os.Stdout, Stderr: os.Stderr}); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestReleaseFileOnlyWhenDefined(t *testing.T) {
+	dir := t.TempDir()
+	write(t, dir, ".gitlab-ci.yml", `
+plain:
+  script: echo plain
+ship:
+  script: echo ship
+  release:
+    tag_name: v1
+    description: hi
+`)
+	p := mustCompile(t, dir)
+	if _, err := Run(Options{Root: dir, Pipeline: p, Jobs: p.Jobs, Executor: "shell", Stdout: os.Stdout, Stderr: os.Stderr}); err != nil {
+		t.Fatal(err)
+	}
+	matches, err := filepath.Glob(filepath.Join(dir, ".glci", "release-*.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(matches) != 1 || filepath.Base(matches[0]) != "release-ship.json" {
+		t.Fatalf("release files = %v, want only release-ship.json", matches)
+	}
+	b, err := os.ReadFile(filepath.Join(dir, ".glci", "release-ship.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got map[string]any
+	if err := json.Unmarshal(b, &got); err != nil {
+		t.Fatal(err)
+	}
+	if len(got) == 0 || got["tag_name"] != "v1" || got["description"] != "hi" {
+		t.Fatalf("release json = %s", b)
 	}
 }
 

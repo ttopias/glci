@@ -4,7 +4,7 @@ Run GitLab CI/CD pipelines on your machine, in Docker. No GitLab server.
 
 `glci` compiles `.gitlab-ci.yml` the way GitLab does — includes, extends, `!reference`, rules, matrix, needs, artifacts, services, docker-in-docker — then runs created jobs in local containers.
 
-Default `glci` (or `glci run`) runs every created job except `when: manual`. Each run refreshes `.glci/` (logs, artifacts, report). Job workspace copies and other temp files are removed when the run finishes. Pass `--manual` to include those jobs, or `--job NAME` to run a specific manual job.
+Default `glci` (or `glci run`) runs every created job except `when: manual`. Each run refreshes `.glci/` (logs, artifacts, report). Job workspace copies and other temp files are removed when the run finishes. Pass `--debug` to keep `.glci/builds` and `.glci/tmp`. Pass `--manual` to include those jobs, or `--job NAME` to run a specific manual job.
 
 ## Install / upgrade
 
@@ -51,6 +51,7 @@ glci run --manual         # also run when:manual jobs
 glci run --job unit       # one job plus its needs
 glci run --mr             # merge-request pipeline
 glci run --var FOO=bar
+glci run --debug          # keep .glci/builds and .glci/tmp
 ```
 
 After a run:
@@ -63,7 +64,7 @@ After a run:
 | `.glci/cache/` | Job caches (kept across runs) |
 | `.glci/pages/` | Pages output when a pages job ran |
 
-`.glci/tmp/` and `.glci/builds/` are used while jobs run and are deleted afterward.
+`.glci/tmp/` and `.glci/builds/` are used while jobs run and are deleted afterward. `glci run --debug` leaves both in place.
 
 ## Docker CLI (no pipeline extras)
 

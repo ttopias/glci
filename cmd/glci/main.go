@@ -64,6 +64,7 @@ Usage:
 
 Created jobs run by default. when:manual jobs need --manual or --job NAME.
 Each run refreshes .glci/ except cache; tmp and builds are deleted afterward.
+--debug keeps .glci/builds and .glci/tmp so job workspaces and scripts can be inspected.
 Jobs bind the host Docker socket (no dind service or DOCKER_* required).
 Copied docker:*-dind services are ignored.
 
@@ -81,6 +82,7 @@ Flags:
   --privileged              Privileged containers
   --allow-remote            Allow include:remote HTTP fetches
   --dry-run                 Compile and print the plan only
+  --debug                   Keep .glci/builds and .glci/tmp after the run
   --concurrency N           Parallel jobs (default 4)
   --input KEY=VAL           spec:inputs value (repeatable)
 
@@ -108,6 +110,7 @@ type flags struct {
 	privileged        bool
 	allowRemote       bool
 	dryRun            bool
+	debug             bool
 	concurrency       int
 	vars              []string
 	jobs              []string
@@ -130,6 +133,7 @@ func parseFlags(args []string) (*flags, error) {
 	fs.BoolVar(&f.privileged, "privileged", false, "privileged docker")
 	fs.BoolVar(&f.allowRemote, "allow-remote", false, "allow remote includes")
 	fs.BoolVar(&f.dryRun, "dry-run", false, "dry run")
+	fs.BoolVar(&f.debug, "debug", false, "keep builds and tmp after the run")
 	fs.IntVar(&f.concurrency, "concurrency", 4, "parallel jobs")
 	fs.StringVar(&f.stage, "stage", "", "stage filter")
 	fs.Func("var", "KEY=VAL", func(s string) error { f.vars = append(f.vars, s); return nil })
@@ -249,7 +253,7 @@ func runCmd(cmd string, args []string) error {
 		_, err := runner.Run(runner.Options{
 			Root: root, Pipeline: p, Jobs: jobs, Executor: execKind,
 			IncludeManual: includeManual, SelectedJobs: f.jobs,
-			DryRun: f.dryRun, Privileged: f.privileged || cfg.Privileged,
+			DryRun: f.dryRun, Debug: f.debug, Privileged: f.privileged || cfg.Privileged,
 			Concurrency: f.concurrency, DefaultImage: defaultImage, Compile: copt,
 		})
 		return err

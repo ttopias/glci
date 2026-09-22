@@ -460,7 +460,7 @@ func jobFrom(name string, body map[string]any, vars map[string]string, when stri
 		IDTokens:           asMapOrEmpty(body["id_tokens"]),
 		Identity:           body["identity"],
 		Hooks:              asMapOrEmpty(body["hooks"]),
-		Release:            asMapOrEmpty(body["release"]),
+		Release:            releaseMap(body["release"]),
 		Pages:              body["pages"],
 		FileVariables:      fileVariables(body["variables"]),
 		Raw:                body,
@@ -1005,6 +1005,14 @@ func asMapOrEmpty(v any) map[string]any {
 	m, _ := asMap(v)
 	if m == nil {
 		return map[string]any{}
+	}
+	return m
+}
+
+func releaseMap(v any) map[string]any {
+	m, ok := asMap(v)
+	if !ok || len(m) == 0 {
+		return nil
 	}
 	return m
 }
