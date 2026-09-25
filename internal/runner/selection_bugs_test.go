@@ -7,6 +7,28 @@ import (
 	"github.com/ttopias/glci/internal/gitlabci"
 )
 
+func resultsByName(res []Result) map[string]Result {
+	by := make(map[string]Result, len(res))
+	for _, r := range res {
+		by[r.Name] = r
+	}
+	return by
+}
+
+func requireRan(t *testing.T, by map[string]Result, name string) {
+	t.Helper()
+	if by[name].Status != "success" || by[name].Skipped {
+		t.Fatalf("%s should run successfully, got %+v", name, by[name])
+	}
+}
+
+func requireSkipped(t *testing.T, by map[string]Result, name string) {
+	t.Helper()
+	if !by[name].Skipped {
+		t.Fatalf("%s should stay skipped, got %+v", name, by[name])
+	}
+}
+
 // --job NAME should run that manual even when FilterJobs pulls in other
 // unselected when:manual jobs from earlier stages (no needs: []).
 func TestSelectedManualNotBlockedByUnselectedManualSkip(t *testing.T) {
@@ -35,16 +57,9 @@ selected_manual:
 	if err != nil {
 		t.Fatal(err)
 	}
-	by := map[string]Result{}
-	for _, r := range res {
-		by[r.Name] = r
-	}
-	if by["selected_manual"].Status != "success" || by["selected_manual"].Skipped {
-		t.Fatalf("selected manual should run via --job, got %+v (all=%+v)", by["selected_manual"], by)
-	}
-	if !by["other_manual"].Skipped {
-		t.Fatalf("unselected manual should stay skipped, got %+v", by["other_manual"])
-	}
+	by := resultsByName(res)
+	requireRan(t, by, "selected_manual")
+	requireSkipped(t, by, "other_manual")
 }
 
 // --job NAME --manual must not run every when:manual job that FilterJobs
@@ -75,13 +90,8 @@ manual_b:
 	if err != nil {
 		t.Fatal(err)
 	}
-	by := map[string]Result{}
-	for _, r := range res {
-		by[r.Name] = r
-	}
-	if by["manual_b"].Status != "success" || by["manual_b"].Skipped {
-		t.Fatalf("selected manual_b should run, got %+v", by["manual_b"])
-	}
+	by := resultsByName(res)
+	requireRan(t, by, "manual_b")
 	if by["manual_a"].Status == "success" && !by["manual_a"].Skipped {
 		t.Fatalf("manual_a must not run for --job manual_b --manual, got %+v", by)
 	}
@@ -139,20 +149,12 @@ later_no_needs:
 	if err != nil {
 		t.Fatal(err)
 	}
-	by := map[string]Result{}
-	for _, r := range res {
-		by[r.Name] = r
+	by := resultsByName(res)
+	for _, name := range []string{"job1", "job9", "job22"} {
+		requireSkipped(t, by, name)
 	}
-	if !by["job1"].Skipped || !by["job9"].Skipped || !by["job22"].Skipped {
-		t.Fatalf("manual job1 chain should skip, got job1=%+v job9=%+v job22=%+v", by["job1"], by["job9"], by["job22"])
-	}
-	for _, name := range []string{"job2", "job3", "job10", "job11", "job23", "job24"} {
-		if by[name].Status != "success" || by[name].Skipped {
-			t.Fatalf("%s should succeed on an independent needs chain, got %+v", name, by[name])
-		}
-	}
-	if by["later_no_needs"].Status != "success" || by["later_no_needs"].Skipped {
-		t.Fatalf("later_no_needs should run; skipped manual must not block the stage, got %+v", by["later_no_needs"])
+	for _, name := range []string{"job2", "job3", "job10", "job11", "job23", "job24", "later_no_needs"} {
+		requireRan(t, by, name)
 	}
 }
 
@@ -185,16 +187,9 @@ downstream:
 	if err != nil {
 		t.Fatal(err)
 	}
-	by := map[string]Result{}
-	for _, r := range res {
-		by[r.Name] = r
-	}
-	if by["gate"].Status != "success" || by["gate"].Skipped {
-		t.Fatalf("needed manual gate should run with --job downstream, got %+v", by["gate"])
-	}
-	if by["downstream"].Status != "success" || by["downstream"].Skipped {
-		t.Fatalf("downstream should succeed, got %+v", by["downstream"])
-	}
+	by := resultsByName(res)
+	requireRan(t, by, "gate")
+	requireRan(t, by, "downstream")
 	if s, ok := by["sibling_manual"]; ok && !s.Skipped {
 		t.Fatalf("sibling_manual must stay skipped, got %+v", s)
 	}

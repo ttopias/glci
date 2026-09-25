@@ -98,8 +98,8 @@ manual_job:
 	}
 }
 
-// Real --job path: selected when:manual without needs:[] is skipped today when
-// FilterJobs also pulls an unselected manual from an earlier stage.
+// --job should run a selected manual even when FilterJobs also pulls an
+// unselected when:manual from an earlier stage (no needs: []).
 func TestCLIJobRunsManualDespiteSiblingManual(t *testing.T) {
 	dir := t.TempDir()
 	writeCI(t, dir, `

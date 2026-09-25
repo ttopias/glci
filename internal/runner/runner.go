@@ -122,13 +122,10 @@ func Run(opts Options) ([]Result, error) {
 				continue
 			}
 			if r.Skipped {
-				if j.When == "always" {
-					continue
-				}
 				// Explicit needs: a skipped needed job blocks (GitLab DAG).
-				// Stage-ordered deps: skipped jobs in earlier stages do not
-				// poison later jobs (only hard failures do).
-				if j.HasNeeds {
+				// Stage-ordered deps: skipped earlier-stage jobs do not poison
+				// later jobs (only hard failures do). when:always ignores skips.
+				if j.When != "always" && j.HasNeeds {
 					return false, "upstream skipped"
 				}
 				continue
@@ -294,18 +291,17 @@ func jobSelected(name string, names []string) bool {
 }
 
 // manualAllowed decides whether a when:manual job may run.
-// --job NAME opts in that job. When jobs are selected, IncludeManual must not
-// expand to stage-sibling manuals FilterJobs pulled in — but manuals on the
-// explicit needs path of a selected job are part of its real dependencies and
-// must still be allowed to run.
+// --job NAME opts that job in. With SelectedJobs, IncludeManual must not unlock
+// stage-sibling manuals FilterJobs pulled in; manuals on a selected job's
+// explicit needs path still run as real dependencies.
 func manualAllowed(name string, opts Options) bool {
 	if jobSelected(name, opts.SelectedJobs) {
 		return true
 	}
-	if len(opts.SelectedJobs) > 0 {
-		return inNeedsClosure(name, opts.SelectedJobs, opts.Jobs)
+	if len(opts.SelectedJobs) == 0 {
+		return opts.IncludeManual
 	}
-	return opts.IncludeManual
+	return inNeedsClosure(name, opts.SelectedJobs, opts.Jobs)
 }
 
 // inNeedsClosure reports whether name is reachable from any selected job by
@@ -315,19 +311,14 @@ func inNeedsClosure(name string, selected []string, jobs []gitlabci.Job) bool {
 	for _, j := range jobs {
 		byName[j.Name] = j
 	}
-	resolve := func(spec string) []string {
-		var out []string
-		for _, j := range jobs {
-			if gitlabci.MatchJobName(j.Name, spec) {
-				out = append(out, j.Name)
-			}
-		}
-		return out
-	}
 	seen := map[string]bool{}
 	var stack []string
 	for _, s := range selected {
-		stack = append(stack, resolve(s)...)
+		for _, j := range jobs {
+			if gitlabci.MatchJobName(j.Name, s) {
+				stack = append(stack, j.Name)
+			}
+		}
 	}
 	for len(stack) > 0 {
 		n := stack[len(stack)-1]
@@ -340,25 +331,35 @@ func inNeedsClosure(name string, selected []string, jobs []gitlabci.Job) bool {
 		if !ok || !j.HasNeeds {
 			continue
 		}
-		for _, nd := range j.Needs {
-			if nd.Job == "" {
-				continue
+		for _, dep := range matchedNeedJobs(j, jobs) {
+			if dep == name {
+				return true
 			}
-			for _, other := range jobs {
-				if !gitlabci.MatchJobName(other.Name, nd.Job) {
-					continue
-				}
-				if nd.Parallel != nil && !matrixMatch(other.Matrix, nd.Parallel) {
-					continue
-				}
-				if other.Name == name {
-					return true
-				}
-				stack = append(stack, other.Name)
-			}
+			stack = append(stack, dep)
 		}
 	}
 	return false
+}
+
+// matchedNeedJobs resolves a job's explicit needs to concrete job names
+// (matrix/parallel aware). Unlike jobDeps, unmatched needs are omitted.
+func matchedNeedJobs(j gitlabci.Job, all []gitlabci.Job) []string {
+	var d []string
+	for _, n := range j.Needs {
+		if n.Job == "" {
+			continue
+		}
+		for _, other := range all {
+			if !gitlabci.MatchJobName(other.Name, n.Job) {
+				continue
+			}
+			if n.Parallel != nil && !matrixMatch(other.Matrix, n.Parallel) {
+				continue
+			}
+			d = append(d, other.Name)
+		}
+	}
+	return d
 }
 
 func expandJobNames(spec string, all []gitlabci.Job) []string {
