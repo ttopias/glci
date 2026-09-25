@@ -3,6 +3,7 @@ package runner
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/ttopias/glci/internal/gitctx"
@@ -284,6 +285,8 @@ func TestDebugKeepsBuildsAndTmp(t *testing.T) {
 	write(t, dir, ".gitlab-ci.yml", `
 job:
   script: echo hello
+  variables:
+    SECRET_HINT: visible-in-debug
 `)
 	p := mustCompile(t, dir)
 	opts := Options{Root: dir, Pipeline: p, Jobs: p.Jobs, Executor: "shell", Stdout: os.Stdout, Stderr: os.Stderr}
@@ -295,6 +298,9 @@ job:
 	}
 	if _, err := os.Stat(filepath.Join(work, "builds")); err == nil {
 		t.Fatal("builds should be removed when Debug is false")
+	}
+	if _, err := os.Stat(filepath.Join(work, "builds", "job", ".glci", "job.json")); err == nil {
+		t.Fatal("debug dumps must not remain when Debug is false")
 	}
 
 	opts.Debug = true
@@ -308,6 +314,18 @@ job:
 	build := filepath.Join(work, "builds", "job")
 	if st, err := os.Stat(build); err != nil || !st.IsDir() {
 		t.Fatalf("build dir should remain with Debug: %v", err)
+	}
+	jobJSON := filepath.Join(build, ".glci", "job.json")
+	if _, err := os.Stat(jobJSON); err != nil {
+		t.Fatalf("expected job.json dump: %v", err)
+	}
+	varsEnv := filepath.Join(build, ".glci", "variables.env")
+	b, err := os.ReadFile(varsEnv)
+	if err != nil {
+		t.Fatalf("expected variables.env dump: %v", err)
+	}
+	if !strings.Contains(string(b), "SECRET_HINT=visible-in-debug") {
+		t.Fatalf("variables.env missing SECRET_HINT: %s", b)
 	}
 }
 

@@ -90,18 +90,19 @@ type Trigger struct {
 }
 
 type Job struct {
-	Name               string            `json:"name"`
-	Stage              string            `json:"stage"`
-	Script             []string          `json:"script,omitempty"`
-	BeforeScript       []string          `json:"before_script,omitempty" yaml:"before_script,omitempty"`
-	AfterScript        []string          `json:"after_script,omitempty" yaml:"after_script,omitempty"`
-	Run                []any             `json:"run,omitempty"`
-	Image              *Image            `json:"image,omitempty"`
-	Services           []Service         `json:"services,omitempty"`
-	Variables          map[string]string `json:"variables,omitempty"`
-	Needs              []Need            `json:"needs,omitempty"`
-	HasNeeds           bool              `json:"has_needs" yaml:"has_needs"`
-	Dependencies       []string          `json:"dependencies,omitempty"`
+	Name         string            `json:"name"`
+	Stage        string            `json:"stage"`
+	Script       []string          `json:"script,omitempty"`
+	BeforeScript []string          `json:"before_script,omitempty" yaml:"before_script,omitempty"`
+	AfterScript  []string          `json:"after_script,omitempty" yaml:"after_script,omitempty"`
+	Run          []any             `json:"run,omitempty"`
+	Image        *Image            `json:"image,omitempty"`
+	Services     []Service         `json:"services,omitempty"`
+	Variables    map[string]string `json:"variables,omitempty"`
+	Needs        []Need            `json:"needs,omitempty"`
+	HasNeeds     bool              `json:"has_needs" yaml:"has_needs"`
+	// No omitempty: nil (key omitted in YAML) vs [] (dependencies: []) must stay distinct in debug dumps.
+	Dependencies       []string          `json:"dependencies"`
 	Artifacts          *Artifacts        `json:"artifacts,omitempty"`
 	Cache              []Cache           `json:"cache,omitempty"`
 	When               string            `json:"when"`
@@ -502,7 +503,12 @@ func jobFrom(name string, body map[string]any, vars map[string]string, when stri
 	j.Environment = parseEnvironment(body["environment"], vars)
 	j.Needs, j.HasNeeds = parseNeeds(body)
 	if deps, ok := body["dependencies"]; ok {
+		// Present key must stay non-nil so dependencies: [] means "download nothing"
+		// (distinct from omitted dependencies = previous-stage default).
 		j.Dependencies = asStringSlice(deps)
+		if j.Dependencies == nil {
+			j.Dependencies = []string{}
+		}
 	}
 	if t := body["trigger"]; t != nil {
 		j.Trigger = parseTrigger(t)

@@ -72,10 +72,10 @@ manual_job:
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(out, "auto success") {
+	if !hasJobStatus(out, "auto", "success") {
 		t.Fatalf("run=%s", out)
 	}
-	if !strings.Contains(out, "skip manual_job") {
+	if !hasJobStatus(out, "manual_job", "skipped") {
 		t.Fatalf("expected skip manual, got %s", out)
 	}
 
@@ -83,7 +83,7 @@ manual_job:
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(out, "manual_job success") {
+	if !hasJobStatus(out, "manual_job", "success") {
 		t.Fatalf("manual run=%s", out)
 	}
 
@@ -93,7 +93,7 @@ manual_job:
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(out, "manual_job success") {
+	if !hasJobStatus(out, "manual_job", "success") {
 		t.Fatalf("job run=%s", out)
 	}
 }
@@ -122,10 +122,10 @@ selected_manual:
 	if err != nil {
 		t.Fatalf("%v\n%s", err, out)
 	}
-	if !strings.Contains(out, "selected_manual success") {
+	if !hasJobStatus(out, "selected_manual", "success") {
 		t.Fatalf("expected selected_manual to run via --job, got:\n%s", out)
 	}
-	if strings.Contains(out, "other_manual success") {
+	if hasJobStatus(out, "other_manual", "success") {
 		t.Fatalf("other_manual must not run:\n%s", out)
 	}
 }
@@ -153,10 +153,10 @@ manual_b:
 	if err != nil {
 		t.Fatalf("%v\n%s", err, out)
 	}
-	if !strings.Contains(out, "manual_b success") {
+	if !hasJobStatus(out, "manual_b", "success") {
 		t.Fatalf("expected manual_b success:\n%s", out)
 	}
-	if strings.Contains(out, "manual_a success") {
+	if hasJobStatus(out, "manual_a", "success") {
 		t.Fatalf("--job manual_b --manual must not run manual_a:\n%s", out)
 	}
 }
@@ -179,7 +179,7 @@ test:
 	if err != nil {
 		t.Fatalf("%v\n%s", err, out)
 	}
-	if !strings.Contains(out, "build success") || !strings.Contains(out, "test success") {
+	if !hasJobStatus(out, "build", "success") || !hasJobStatus(out, "test", "success") {
 		t.Fatalf("stage=%s", out)
 	}
 }
@@ -236,12 +236,23 @@ func TestCLIExamplesBasicShell(t *testing.T) {
 	if err != nil {
 		t.Fatalf("example basic: %v\n%s", err, out)
 	}
-	if !strings.Contains(out, "build success") {
+	if !hasJobStatus(out, "build", "success") {
 		t.Fatalf("example=%s", out)
 	}
-	if strings.Contains(out, "manual_deploy success") {
+	if hasJobStatus(out, "manual_deploy", "success") {
 		t.Fatalf("manual should not run: %s", out)
 	}
+}
+
+// hasJobStatus reports whether the run summary lists name with the given status.
+func hasJobStatus(out, name, status string) bool {
+	for _, line := range strings.Split(out, "\n") {
+		fields := strings.Fields(line)
+		if len(fields) >= 2 && fields[0] == name && fields[1] == status {
+			return true
+		}
+	}
+	return false
 }
 
 func capture(t *testing.T, fn func() error) (string, error) {

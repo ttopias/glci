@@ -28,7 +28,7 @@ type Options struct {
 	IncludeManual bool     // when:manual jobs run only with this or --job NAME
 	SelectedJobs  []string // --job names; a matching manual job is treated as specified
 	DryRun        bool
-	Debug         bool // keep .glci/builds and .glci/tmp after the run
+	Debug         bool // keep .glci/builds and .glci/tmp; also dump job.json + variables.env per job
 	Privileged    bool
 	Concurrency   int
 	DefaultImage  string
@@ -154,6 +154,18 @@ func Run(opts Options) ([]Result, error) {
 	var wg sync.WaitGroup
 	groups := map[string]*sync.Mutex{}
 	groupMu := sync.Mutex{}
+	stageSeen := map[string]bool{}
+	var stageMu sync.Mutex
+
+	printStage := func(stage string) {
+		stageMu.Lock()
+		defer stageMu.Unlock()
+		if stageSeen[stage] {
+			return
+		}
+		stageSeen[stage] = true
+		fmt.Fprintf(opts.Stdout, "\n── stage: %s ──\n", stage)
+	}
 
 	for {
 		mu.Lock()
@@ -207,11 +219,13 @@ func Run(opts Options) ([]Result, error) {
 					mu.Lock()
 					results[j.Name] = &res
 					mu.Unlock()
-					fmt.Fprintf(opts.Stdout, "==> skip %s (%s)\n", j.Name, reason)
+					printStage(j.Stage)
+					fmt.Fprintf(opts.Stdout, "○ skip  %s (%s)\n", j.Name, reason)
 					return
 				}
 				if j.When == "delayed" && j.StartIn > 0 && !opts.DryRun {
-					fmt.Fprintf(opts.Stdout, "==> delay %s %s\n", j.Name, j.StartIn)
+					printStage(j.Stage)
+					fmt.Fprintf(opts.Stdout, "… delay %s %s\n", j.Name, j.StartIn)
 					time.Sleep(j.StartIn)
 				}
 
@@ -230,7 +244,8 @@ func Run(opts Options) ([]Result, error) {
 					j.Variables[k] = v
 				}
 
-				fmt.Fprintf(opts.Stdout, "==> run %s (stage %s)\n", j.Name, j.Stage)
+				printStage(j.Stage)
+				fmt.Fprintf(opts.Stdout, "▶ start %s\n", j.Name)
 				start := time.Now()
 				res := executeJob(opts, j)
 				res.Duration = time.Since(start)
@@ -238,7 +253,7 @@ func Run(opts Options) ([]Result, error) {
 				if res.Status == "failed" && res.AllowFail {
 					res.Status = "failed-allowed"
 				}
-				fmt.Fprintf(opts.Stdout, "==> %s %s in %s\n", j.Name, res.Status, res.Duration.Truncate(time.Millisecond))
+				printJobResult(opts, j.Name, res)
 
 				if artifactsWhen(j, res) {
 					if dj, err := collectDotenv(opts, j); err == nil && len(dj) > 0 {
@@ -408,24 +423,62 @@ func jobDeps(j gitlabci.Job, all []gitlabci.Job, stages []string) []string {
 	return d
 }
 
+// artifactSources returns job names whose artifacts should be restored into j.
+// Mirrors GitLab Rails Ci::BuildDependencies:
+//   - dependencies: [] (non-nil empty) → restore nothing, even if needs is set
+//   - else candidates = needs with artifacts:true (if HasNeeds) OR previous stages
+//   - if dependencies: [a, b] non-empty → intersect candidates with that list
 func artifactSources(j gitlabci.Job, all []gitlabci.Job, stages []string) []string {
-	if j.Dependencies != nil {
-		var d []string
-		for _, name := range j.Dependencies {
-			d = append(d, expandJobNames(name, all)...)
-		}
-		return d
+	if j.Dependencies != nil && len(j.Dependencies) == 0 {
+		return []string{}
 	}
+
+	var candidates []string
 	if j.HasNeeds {
-		var d []string
 		for _, n := range j.Needs {
-			if n.Artifacts && n.Job != "" {
-				d = append(d, expandJobNames(n.Job, all)...)
+			if !n.Artifacts || n.Job == "" {
+				continue
+			}
+			matched := false
+			for _, other := range all {
+				if !gitlabci.MatchJobName(other.Name, n.Job) {
+					continue
+				}
+				if n.Parallel != nil && !matrixMatch(other.Matrix, n.Parallel) {
+					continue
+				}
+				candidates = append(candidates, other.Name)
+				matched = true
+			}
+			if !matched {
+				candidates = append(candidates, n.Job)
 			}
 		}
-		return d
+	} else {
+		si := stageIndex(stages, j.Stage)
+		for _, other := range all {
+			if stageIndex(stages, other.Stage) < si {
+				candidates = append(candidates, other.Name)
+			}
+		}
 	}
-	return jobDeps(j, all, stages)
+
+	if j.Dependencies == nil {
+		return candidates
+	}
+	allowed := map[string]bool{}
+	for _, name := range j.Dependencies {
+		for _, exp := range expandJobNames(name, all) {
+			allowed[exp] = true
+		}
+	}
+	out := make([]string, 0, len(candidates))
+	for _, c := range candidates {
+		if allowed[c] {
+			out = append(out, c)
+		}
+	}
+	return out
 }
 
 func matrixMatch(have, want map[string]string) bool {
@@ -501,7 +554,7 @@ func executeJob(opts Options, j gitlabci.Job) Result {
 		if !shouldRetry(j.Retry, last) {
 			return last
 		}
-		fmt.Fprintf(opts.Stdout, "==> retry %s (%d/%d)\n", j.Name, try+1, j.Retry.Max)
+		fmt.Fprintf(opts.Stdout, "↻ retry %s (%d/%d)\n", j.Name, try+1, j.Retry.Max)
 	}
 	return last
 }
@@ -534,6 +587,10 @@ func runOnce(opts Options, j gitlabci.Job) Result {
 	j.Variables["CI_JOB_NAME"] = j.Name
 	j.Variables["CI_JOB_STAGE"] = j.Stage
 	injectSecrets(j)
+
+	if opts.Debug {
+		writeJobDebug(build, j)
+	}
 
 	scriptPath := filepath.Join(opts.WorkDir, "tmp", safe(j.Name)+".sh")
 	if err := os.WriteFile(scriptPath, []byte(renderScript(j)), 0o755); err != nil {
@@ -853,26 +910,10 @@ func matchPath(pattern, name string) bool {
 }
 
 func restoreArtifacts(opts Options, j gitlabci.Job, build string) {
-	srcJobs := j.Dependencies
-	if srcJobs == nil && j.HasNeeds {
-		for _, n := range j.Needs {
-			if n.Artifacts {
-				srcJobs = append(srcJobs, n.Job)
-			}
-		}
-	} else if srcJobs == nil {
-		for _, other := range opts.Jobs {
-			if stageIndex(opts.Pipeline.Stages, other.Stage) < stageIndex(opts.Pipeline.Stages, j.Stage) {
-				srcJobs = append(srcJobs, other.Name)
-			}
-		}
-	}
-	for _, name := range srcJobs {
-		for _, actual := range expandJobNames(name, opts.Jobs) {
-			dir := filepath.Join(opts.WorkDir, "artifacts", safe(actual))
-			if st, err := os.Stat(dir); err == nil && st.IsDir() {
-				_ = copyTree(dir, build, nil)
-			}
+	for _, name := range artifactSources(j, opts.Jobs, opts.Pipeline.Stages) {
+		dir := filepath.Join(opts.WorkDir, "artifacts", safe(name))
+		if st, err := os.Stat(dir); err == nil && st.IsDir() {
+			_ = copyTree(dir, build, nil)
 		}
 	}
 }
@@ -1035,6 +1076,48 @@ func writeSkipLog(opts Options, name, reason string) string {
 	return p
 }
 
+func printJobResult(opts Options, name string, res Result) {
+	dur := res.Duration.Truncate(time.Millisecond)
+	switch res.Status {
+	case "success":
+		fmt.Fprintf(opts.Stdout, "✓ ok    %s in %s\n", name, dur)
+	case "failed-allowed":
+		fmt.Fprintf(opts.Stdout, "⚠ fail  %s in %s (allowed)\n", name, dur)
+		if res.LogPath != "" {
+			fmt.Fprintf(opts.Stdout, "  log: %s\n", res.LogPath)
+		}
+	case "failed":
+		fmt.Fprintf(opts.Stdout, "✗ fail  %s in %s\n", name, dur)
+		if res.LogPath != "" {
+			fmt.Fprintf(opts.Stdout, "  log: %s\n", res.LogPath)
+		}
+	default:
+		fmt.Fprintf(opts.Stdout, "• %-5s %s in %s\n", res.Status, name, dur)
+	}
+}
+
+// writeJobDebug dumps the compiled job and effective variables under the job
+// build tree. Values are written as-is (including secrets / dummy JWTs); there
+// is no extra redaction. Files are mode 0600.
+func writeJobDebug(build string, j gitlabci.Job) {
+	dir := filepath.Join(build, ".glci")
+	_ = os.MkdirAll(dir, 0o755)
+	if b, err := json.MarshalIndent(j, "", "  "); err == nil {
+		_ = os.WriteFile(filepath.Join(dir, "job.json"), b, 0o600)
+	}
+	keys := make([]string, 0, len(j.Variables))
+	for k := range j.Variables {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	var b strings.Builder
+	b.WriteString("# Effective job variables (no redaction). Written by glci --debug.\n")
+	for _, k := range keys {
+		fmt.Fprintf(&b, "%s=%s\n", k, j.Variables[k])
+	}
+	_ = os.WriteFile(filepath.Join(dir, "variables.env"), []byte(b.String()), 0o600)
+}
+
 func writeReport(opts Options, results []Result) {
 	if opts.WorkDir == "" {
 		return
@@ -1063,15 +1146,25 @@ func writeReport(opts Options, results []Result) {
 }
 
 func printJobOutputs(opts Options, results []Result) {
-	fmt.Fprintf(opts.Stdout, "\nJob outputs (under %s):\n", opts.WorkDir)
+	fmt.Fprintf(opts.Stdout, "\n── summary ──\n")
+	failed := 0
 	for _, r := range results {
-		fmt.Fprintf(opts.Stdout, "  %-28s %-16s log=%s", r.Name, r.Status, r.LogPath)
+		fmt.Fprintf(opts.Stdout, "  %-28s %-16s", r.Name, r.Status)
+		if r.LogPath != "" {
+			fmt.Fprintf(opts.Stdout, "  log=%s", r.LogPath)
+		}
 		if r.ArtifactsPath != "" {
 			fmt.Fprintf(opts.Stdout, "  artifacts=%s", r.ArtifactsPath)
 		}
 		fmt.Fprintln(opts.Stdout)
+		if r.Status == "failed" && !r.AllowFail {
+			failed++
+		}
 	}
 	fmt.Fprintf(opts.Stdout, "  report=%s\n", filepath.Join(opts.WorkDir, "report.json"))
+	if failed > 0 {
+		fmt.Fprintf(opts.Stdout, "\n%d job(s) failed — see log paths above\n", failed)
+	}
 }
 
 func mergeCopy(m map[string]string) map[string]string {
@@ -1179,7 +1272,7 @@ func runTrigger(opts Options, j gitlabci.Job) Result {
 	} else if j.Trigger.Project != "" {
 		mapped := opts.Compile.Projects[j.Trigger.Project]
 		if mapped == "" {
-			fmt.Fprintf(opts.Stdout, "==> trigger %s: project %q not mapped in .glci.yml\n", j.Name, j.Trigger.Project)
+			fmt.Fprintf(opts.Stdout, "▶ trigger %s: project %q not mapped in .glci.yml\n", j.Name, j.Trigger.Project)
 			return Result{Name: j.Name, Status: "success"}
 		}
 		if filepath.IsAbs(mapped) {
@@ -1190,10 +1283,10 @@ func runTrigger(opts Options, j gitlabci.Job) Result {
 		file = ".gitlab-ci.yml"
 	}
 	if file == "" {
-		fmt.Fprintf(opts.Stdout, "==> trigger %s: no local child pipeline to run\n", j.Name)
+		fmt.Fprintf(opts.Stdout, "▶ trigger %s: no local child pipeline to run\n", j.Name)
 		return Result{Name: j.Name, Status: "success"}
 	}
-	fmt.Fprintf(opts.Stdout, "==> child pipeline %s from %s\n", j.Name, file)
+	fmt.Fprintf(opts.Stdout, "▶ child  %s from %s\n", j.Name, file)
 	copt := opts.Compile
 	copt.Root = root
 	copt.File = file

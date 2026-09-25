@@ -4,7 +4,7 @@ Run GitLab CI/CD pipelines on your machine, in Docker. No GitLab server.
 
 `glci` compiles `.gitlab-ci.yml` the way GitLab does — includes, extends, `!reference`, rules, matrix, needs, artifacts, services, docker-in-docker — then runs created jobs in local containers.
 
-Default `glci` (or `glci run`) runs every created job except `when: manual`. Each run refreshes `.glci/` (logs, artifacts, report). Job workspace copies and other temp files are removed when the run finishes. Pass `--debug` to keep `.glci/builds` and `.glci/tmp`. Pass `--manual` to include those jobs, or `--job NAME` to run a specific manual job.
+Default `glci` (or `glci run`) runs every created job except `when: manual`. Each run refreshes `.glci/` (logs, artifacts, report). Job workspace copies and other temp files are removed when the run finishes. Pass `--debug` to keep `.glci/builds` and `.glci/tmp`, and to write per-job dumps under `.glci/builds/<job>/.glci/` (`job.json` + `variables.env`; values are not redacted). Pass `--manual` to include those jobs, or `--job NAME` to run a specific manual job.
 
 ## Install / upgrade
 
@@ -51,7 +51,7 @@ glci run --manual         # also run when:manual jobs
 glci run --job unit       # one job plus its needs
 glci run --mr             # merge-request pipeline
 glci run --var FOO=bar
-glci run --debug          # keep .glci/builds and .glci/tmp
+glci run --debug          # keep builds/tmp; dump job.json + variables.env
 ```
 
 After a run:
@@ -63,8 +63,19 @@ After a run:
 | `.glci/report.json` | Status, log path, and artifact path per job |
 | `.glci/cache/` | Job caches (kept across runs) |
 | `.glci/pages/` | Pages output when a pages job ran |
+| `.glci/builds/<job>/.glci/` | With `--debug`: `job.json` + `variables.env` (no redaction) |
 
 `.glci/tmp/` and `.glci/builds/` are used while jobs run and are deleted afterward. `glci run --debug` leaves both in place.
+
+### Artifacts (`needs` / `dependencies`)
+
+Artifact restore follows GitLab Rails `Ci::BuildDependencies`:
+
+- **`dependencies: []`** — restore nothing (even when `needs` is set).
+- Otherwise candidates are **`needs` with `artifacts: true`** (default) when the job has `needs`, else **previous-stage** jobs.
+- **`dependencies: [a, b]`** — intersect those candidates with the listed jobs.
+- **`needs` + `artifacts: false`** — that need is not a candidate.
+- Dotenv from prior jobs uses the same selection.
 
 ## Docker CLI (no pipeline extras)
 
