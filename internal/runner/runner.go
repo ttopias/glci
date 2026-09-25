@@ -104,7 +104,7 @@ func Run(opts Options) ([]Result, error) {
 		if j.When == "never" {
 			return false, "when:never"
 		}
-		if j.When == "manual" && !opts.IncludeManual && !jobSelected(j.Name, opts.SelectedJobs) {
+		if j.When == "manual" && !manualAllowed(j.Name, opts) {
 			return false, "manual"
 		}
 		deps := jobDeps(j, jobs, opts.Pipeline.Stages)
@@ -125,7 +125,13 @@ func Run(opts Options) ([]Result, error) {
 				if j.When == "always" {
 					continue
 				}
-				return false, "upstream skipped"
+				// Explicit needs: a skipped needed job blocks (GitLab DAG).
+				// Stage-ordered deps: skipped jobs in earlier stages do not
+				// poison later jobs (only hard failures do).
+				if j.HasNeeds {
+					return false, "upstream skipped"
+				}
+				continue
 			}
 			depRan = true
 			if r.Status == "failed" && !r.AllowFail {
@@ -282,6 +288,74 @@ func jobSelected(name string, names []string) bool {
 	for _, n := range names {
 		if gitlabci.MatchJobName(name, n) {
 			return true
+		}
+	}
+	return false
+}
+
+// manualAllowed decides whether a when:manual job may run.
+// --job NAME opts in that job. When jobs are selected, IncludeManual must not
+// expand to stage-sibling manuals FilterJobs pulled in — but manuals on the
+// explicit needs path of a selected job are part of its real dependencies and
+// must still be allowed to run.
+func manualAllowed(name string, opts Options) bool {
+	if jobSelected(name, opts.SelectedJobs) {
+		return true
+	}
+	if len(opts.SelectedJobs) > 0 {
+		return inNeedsClosure(name, opts.SelectedJobs, opts.Jobs)
+	}
+	return opts.IncludeManual
+}
+
+// inNeedsClosure reports whether name is reachable from any selected job by
+// walking only explicit needs edges (never stage ordering).
+func inNeedsClosure(name string, selected []string, jobs []gitlabci.Job) bool {
+	byName := map[string]gitlabci.Job{}
+	for _, j := range jobs {
+		byName[j.Name] = j
+	}
+	resolve := func(spec string) []string {
+		var out []string
+		for _, j := range jobs {
+			if gitlabci.MatchJobName(j.Name, spec) {
+				out = append(out, j.Name)
+			}
+		}
+		return out
+	}
+	seen := map[string]bool{}
+	var stack []string
+	for _, s := range selected {
+		stack = append(stack, resolve(s)...)
+	}
+	for len(stack) > 0 {
+		n := stack[len(stack)-1]
+		stack = stack[:len(stack)-1]
+		if seen[n] {
+			continue
+		}
+		seen[n] = true
+		j, ok := byName[n]
+		if !ok || !j.HasNeeds {
+			continue
+		}
+		for _, nd := range j.Needs {
+			if nd.Job == "" {
+				continue
+			}
+			for _, other := range jobs {
+				if !gitlabci.MatchJobName(other.Name, nd.Job) {
+					continue
+				}
+				if nd.Parallel != nil && !matrixMatch(other.Matrix, nd.Parallel) {
+					continue
+				}
+				if other.Name == name {
+					return true
+				}
+				stack = append(stack, other.Name)
+			}
 		}
 	}
 	return false

@@ -98,6 +98,69 @@ manual_job:
 	}
 }
 
+// Real --job path: selected when:manual without needs:[] is skipped today when
+// FilterJobs also pulls an unselected manual from an earlier stage.
+func TestCLIJobRunsManualDespiteSiblingManual(t *testing.T) {
+	dir := t.TempDir()
+	writeCI(t, dir, `
+stages: [build, deploy]
+auto:
+  stage: build
+  script: echo auto
+other_manual:
+  stage: build
+  when: manual
+  script: echo other
+selected_manual:
+  stage: deploy
+  when: manual
+  script: echo selected
+`)
+	out, err := capture(t, func() error {
+		return run([]string{"run", "-C", dir, "--shell", "--job", "selected_manual"})
+	})
+	if err != nil {
+		t.Fatalf("%v\n%s", err, out)
+	}
+	if !strings.Contains(out, "selected_manual success") {
+		t.Fatalf("expected selected_manual to run via --job, got:\n%s", out)
+	}
+	if strings.Contains(out, "other_manual success") {
+		t.Fatalf("other_manual must not run:\n%s", out)
+	}
+}
+
+// --job + --manual must not run every manual FilterJobs included as a stage dep.
+func TestCLIJobPlusManualDoesNotRunAllManuals(t *testing.T) {
+	dir := t.TempDir()
+	writeCI(t, dir, `
+stages: [build, deploy]
+build_a:
+  stage: build
+  script: echo a
+manual_a:
+  stage: build
+  when: manual
+  script: echo ma
+manual_b:
+  stage: deploy
+  when: manual
+  script: echo mb
+`)
+	out, err := capture(t, func() error {
+		return run([]string{"run", "-C", dir, "--shell", "--job", "manual_b", "--manual"})
+	})
+	if err != nil {
+		t.Fatalf("%v\n%s", err, out)
+	}
+	if !strings.Contains(out, "manual_b success") {
+		t.Fatalf("expected manual_b success:\n%s", out)
+	}
+	if strings.Contains(out, "manual_a success") {
+		t.Fatalf("--job manual_b --manual must not run manual_a:\n%s", out)
+	}
+}
+
 func TestCLIStageIncludesNeeds(t *testing.T) {
 	dir := t.TempDir()
 	writeCI(t, dir, `
